@@ -1220,7 +1220,7 @@ function initControls() {
         config.speed = value;
     });
 
-    gui.add(config, 'contrast', 0, 100).step(1).onChange(value => {
+    gui.add(config, 'contrast', 0, 150).step(1).onChange(value => {
         config.contrast = value;
     });
 
@@ -1232,7 +1232,7 @@ function initControls() {
         config.edgeInfluence = value;
     });
 
-    gui.add(config, 'brightnessInfluence', -1, 1).step(0.01).onChange(value => {
+    gui.add(config, 'brightnessInfluence', -0.25, 0.25).step(0.001).onChange(value => {
         config.brightnessInfluence = value;
     });
 
@@ -1250,7 +1250,7 @@ function initControls() {
     });
 
     const cameraFolder = gui.addFolder('Camera');
-    cameraFolder.add(config, 'zoomCam', 0.5, 2).step(0.1).onChange(value => {
+    cameraFolder.add(config, 'zoomCam', 0.5, 3).step(0.1).onChange(value => {
         config.zoomCam = value;
         if (cameraInput) {
             cameraInput.setZoom(value);
