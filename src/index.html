@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+    <meta charset="utf-8"/>
+    <!-- <script src="RDF.js"></script> -->
+
+    
+
+    
+    <style type="text/css">
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 100;
+            font-family: Arial, sans-serif;
+            max-width: 300px;
+        }
+        #controls h3 {
+            margin-top: 0;
+        }
+        #controls div {
+            margin-bottom: 10px;
+        }
+        #controls label {
+            display: inline-block;
+            width: 150px;
+        }
+        #controls input[type="range"] {
+            width: 100%;
+        }
+
+    </style>
+</head>
+
+<body>
+    <div id="gui"></div>
+  <!-- <div id="controls">
+    <h3>Controls</h3>
+    <div>
+        <label for="zoom">Zoom:</label>
+        <input type="range" id="zoom" min="0.5" max="2" step="0.1" value="1">
+    </div>
+    <div>
+        <label for="speed">Speed:</label>
+        <input type="range" id="speed" min="1" max="120" step="1" value="60">
+    </div>
+    <div>
+        <label for="contrast">Contrast:</label>
+        <input type="range" id="contrast" min="0" max="100" step="0.5" value="75">
+    </div>
+    <div>
+        <label for="randomPatternScale">Pattern Scale:</label>
+        <input type="range" id="randomPatternScale" min="1" max="7" step="0.01" value="5">
+    </div>
+    <div>
+        <label for="edgeInfluence">Edge Influence:</label>
+        <input type="range" id="edgeInfluence" min="-1" max="1" step="0.01" value="0.5">
+    </div>
+    <div>
+        <label for="brightnessInfluence">Brightness Influence:</label>
+        <input type="range" id="brightnessInfluence" min="-1" max="1" step="0.005" value="0.5">
+    </div>
+    <div>
+        <label for="invert">Invert:</label>
+        <input type="checkbox" id="invert" checked>
+    </div>
+    <div>
+        <label for="brushSize">Brush Size:</label>
+        <input type="range" id="brushSize" min="0.01" max="0.2" step="0.01" value="0.01">
+    </div>
+    <div>
+        <label for="brushStrength">Brush Strength:</label>
+        <input type="range" id="brushStrength" min="0" max="1" step="0.01" value="0.5">
+    </div>
+</div> -->
+
+</body>
+</html>
