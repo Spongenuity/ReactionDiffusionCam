@@ -155,6 +155,30 @@ function simplifiedImageTrace(imageData, channel, threshold = 128, sampleInterva
     return paths;
 }
 
+function handleOrientationChange() {
+    const orientation = window.orientation;
+    const canvas = document.querySelector('canvas');
+    
+    if (orientation === 90 || orientation === -90) {
+        // Landscape
+        canvas.style.width = '100vw';
+        canvas.style.height = 'auto';
+    } else {
+        // Portrait
+        canvas.style.width = 'auto';
+        canvas.style.height = '100vh';
+    }
+    
+    // Trigger a resize event to update the WebGL context
+    window.dispatchEvent(new Event('resize'));
+}
+
+// Add event listener for orientation change
+window.addEventListener('orientationchange', handleOrientationChange);
+
+// Call once on load to set initial orientation
+handleOrientationChange();
+
 function createSVGForChannel(imageData, channel, threshold = 128, sampleInterval = 5) {
     const width = imageData.width;
     const height = imageData.height;
@@ -205,17 +229,31 @@ function splitAndSaveColorChannelsAsSVG() {
 
 async function setupCamera() {
     const video = document.createElement('video');
+    video.setAttribute('playsinline', ''); // This is important for iOS
+
     try {
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
             throw new Error('Your browser does not support the required media APIs');
         }
+
+        const constraints = {
+            video: {
+                facingMode: 'user', // Use the front camera for selfies
+                width: { ideal: 1280 },
+                height: { ideal: 720 }
+            }
+        };
+
         console.log('Attempting to get user media...');
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
         console.log('User media obtained successfully');
+        
         video.srcObject = stream;
         console.log('Video source object set');
+        
         await video.play();
         console.log('Video playback initiated');
+        
         return video;
     } catch (error) {
         console.error('Detailed error in setupCamera:', error);
@@ -1301,12 +1339,21 @@ async function main() {
 
     // Initialize ReDiff here
     ReDiff = new ReactionDiffusion();
-    canvas.width = config.canvasWidth;
-    canvas.height = config.canvasHeight;
 
-    const scale = Math.min(window.innerWidth / config.canvasWidth, window.innerHeight / config.canvasHeight);
-    canvas.style.width = `${config.canvasWidth * scale}px`;
-    canvas.style.height = `${config.canvasHeight * scale}px`;
+    function resizeCanvas() {
+        const devicePixelRatio = window.devicePixelRatio || 1;
+        const displayWidth = Math.floor(window.innerWidth * devicePixelRatio);
+        const displayHeight = Math.floor(window.innerHeight * devicePixelRatio);
+
+        if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
+            canvas.width = displayWidth;
+            canvas.height = displayHeight;
+            needToAdjustCanvasSize = true;
+        }
+    }
+
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas(); // Call once to set initial size
 
     getTexture();
 
@@ -1315,7 +1362,7 @@ async function main() {
 
     function mainLoop() {
         if (needToAdjustCanvasSize) {
-            adjustSize();
+            resizeCanvas();
             ReDiff.resize(canvas.width, canvas.height);
             needToAdjustCanvasSize = false;
         }
