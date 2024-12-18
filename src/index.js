@@ -10,7 +10,8 @@ const config = {
     aspectRatio: 4 / 3,
     canvasWidth: 1024,
     randomPatternScale: 5,
-    zoom: 1,
+    zoom: 1.1,
+    zoomCam: 1.3,               
     interface: "image",
     initState: "starter",
     maxResolution: 8,
@@ -18,15 +19,153 @@ const config = {
     speed: 60,
     patternSplit: 7,
     contrast: 75,
-    zoomCam: 2.0,
-    edgeInfluence: 0.0,
+
+    edgeInfluence: -0.09,
     brightnessInfluence: 0.0,
     patternScale: 4,
     brushSize: 0.01,
     brushStrength: 1.0,
-    contrast: 75,
     threshold: 128,
+    diffA: 0.210,
+    diffB: 0.105,
+    feedAMin: 0.02220,
+    feedAMax: 0.04470,
+    killBMin: 0.06516,
+    killBMax: 0.05789,
+    preset: 'OG',
+    noiseScale: 1.0,
+    noiseStrength: 0,
+    noiseSpeed: 0,
+    colorR: [255, 0, 0],    // Red channel color (0-255)
+    colorG: [0, 255, 0],    // Green channel color (0-255)
+    colorB: [0, 0, 255],    // Blue channel color (0-255)
+    colorMix: 0.5,
+    audioReactive: false,
+    audioStrengthInfluence: 0.02,
+    audioSpeedInfluence: 0.02,
+    audioSensitivity: 1.0,
 };
+
+const presets = {
+    'OG': {
+        diffA: 0.210, diffB: 0.105,
+        feedAMin: 0.02220, feedAMax: 0.04470,
+        killBMin: 0.06516, killBMax: 0.05789
+    },
+    'Classic': {
+        diffA: 0.2097, diffB: 0.1050,
+        feedAMin: 0.0367, feedAMax: 0.0649,
+        killBMin: 0.0649, killBMax: 0.0591
+    },
+    'Classic Spots': {
+        diffA: 0.2100, diffB: 0.1000,
+        feedAMin: 0.0370, feedAMax: 0.0620,
+        killBMin: 0.0620, killBMax: 0.0609
+    },
+    'Classic Stripes': {
+        diffA: 0.2000, diffB: 0.1000,
+        feedAMin: 0.0390, feedAMax: 0.0650,
+        killBMin: 0.0590, killBMax: 0.0620
+    },
+    'Classic Fine': {
+        diffA: 0.2150, diffB: 0.1075,
+        feedAMin: 0.0350, feedAMax: 0.0630,
+        killBMin: 0.0630, killBMax: 0.0580
+    },
+    'Classic Maze': {
+        diffA: 0.2000, diffB: 0.1000,
+        feedAMin: 0.0300, feedAMax: 0.0550,
+        killBMin: 0.0550, killBMax: 0.0620
+    },
+    'Coral': {
+        diffA: 0.1, diffB: 0.05,
+        feedAMin: 0.054, feedAMax: 0.064,
+        killBMin: 0.062, killBMax: 0.06
+    },
+    'Mitosis': {
+        diffA: 0.25, diffB: 0.125,
+        feedAMin: 0.03, feedAMax: 0.08,
+        killBMin: 0.06, killBMax: 0.07
+    },
+    'Fingerprint': {
+        diffA: 0.2, diffB: 0.1,
+        feedAMin: 0.029, feedAMax: 0.057,
+        killBMin: 0.057, killBMax: 0.063
+    },
+    'Fluid': {
+        diffA: 0.25, diffB: 0.15,
+        feedAMin: 0.03, feedAMax: 0.09,
+        killBMin: 0.056, killBMax: 0.062
+    },
+    'Detailed': {
+        diffA: 0.18, diffB: 0.09,
+        feedAMin: 0.022, feedAMax: 0.051,
+        killBMin: 0.051, killBMax: 0.064
+    },
+    'Detailed Bright': {
+        diffA: 0.16, diffB: 0.08,
+        feedAMin: 0.020, feedAMax: 0.048,
+        killBMin: 0.048, killBMax: 0.060
+    },
+    'Detailed Balanced': {
+        diffA: 0.17, diffB: 0.085,
+        feedAMin: 0.030, feedAMax: 0.055,
+        killBMin: 0.055, killBMax: 0.062
+    },
+    'Waves': {
+        diffA: 0.21, diffB: 0.11,
+        feedAMin: 0.039, feedAMax: 0.058,
+        killBMin: 0.059, killBMax: 0.061
+    },
+    'Maze': {
+        diffA: 0.19, diffB: 0.09,
+        feedAMin: 0.037, feedAMax: 0.06,
+        killBMin: 0.059, killBMax: 0.065
+    }
+};
+
+let audioContext;
+let analyser;
+let audioSource;
+let dataArray;
+
+async function setupAudio() {
+    try {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 256;
+        const bufferLength = analyser.frequencyBinCount;
+        dataArray = new Uint8Array(bufferLength);
+
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioSource = audioContext.createMediaStreamSource(stream);
+        audioSource.connect(analyser);
+
+        console.log("Audio setup successful");
+    } catch (error) {
+        console.error("Error setting up audio:", error);
+    }
+}
+
+function mapNoiseStrength(audioData) {
+    // Use the average of the lower frequencies (bass)
+    const bassRange = audioData.slice(0, 10);
+    const bassAverage = bassRange.reduce((a, b) => a + b, 0) / bassRange.length;
+    // Map the bass average (0-255) to noiseStrength range (0-0.2)
+    return Math.min((bassAverage / 255) * 0.2, 0.2);
+}
+
+function mapNoiseSpeed(audioData) {
+    // Detect beats by looking at energy in a specific frequency range
+    const beatRange = audioData.slice(5, 15);
+    const beatEnergy = beatRange.reduce((a, b) => a + b, 0) / beatRange.length;
+    // Map beat energy (0-255) to noiseSpeed range (0-0.2)
+    return (beatEnergy / 255) * 0.2;
+}
+
+function normalizeColor(color) {
+    return color.map(c => c / 255);
+}
 
 function saveCanvasAsImage() {
     // Create a temporary canvas to draw the WebGL content
@@ -65,7 +204,7 @@ function splitAndSaveColorChannels() {
     const data = imageData.data;
 
     // Create separate canvases for each color channel
-    const channels = ['red', 'green', 'blue'];
+    const channels = ['cyan', 'magenta', 'yellow'];
     channels.forEach((channel, index) => {
         const channelCanvas = document.createElement('canvas');
         channelCanvas.width = canvas.width;
@@ -206,7 +345,7 @@ function splitAndSaveColorChannelsAsSVG() {
     const imageData = tempCtx.getImageData(0, 0, canvas.width, canvas.height);
 
     // Create separate SVGs for each color channel
-    const channels = ['red', 'green', 'blue'];
+    const channels = ['cyan', 'magenta', 'yellow'];
     channels.forEach((channel, index) => {
         const svgContent = createSVGForChannel(imageData, index);
         
@@ -395,28 +534,40 @@ const shaders = {
     }
     `,
     disColFrag: `#version 300 es
-    precision mediump float;
-    uniform sampler2D uR, uG, uB;
-    in vec2 vS;  
-    out vec4 fragColor;
-    ${shaderUtils.enDe16}
-    ${shaderUtils.samT}
-    
-    void main() {
-        float red = samT(uR, vS);
-        float green = samT(uG, vS);
-        float blue = samT(uB, vS);
-    
-        vec3 edge0 = vec3(0.20, 0.21, 0.22);
-        vec3 edge1 = vec3(0.23, 0.24, 0.25);
-        vec3 smoothColor = smoothstep(edge0, edge1, vec3(red, green, blue));
+precision mediump float;
+uniform sampler2D uR, uG, uB;
+uniform vec3 uColorR, uColorG, uColorB;
+uniform float uColorMix;
+uniform float uInvert;  // Changed to float for easier use in calculations
+in vec2 vS;  
+out vec4 fragColor;
 
-        if(#INJECT(uInvert) == 1.0) {
-        fragColor = vec4(1.0 - smoothColor, 1.0);
-        } else {
-        fragColor = vec4(smoothColor, 1.0);
-        }
-    }
+${shaderUtils.enDe16}
+${shaderUtils.samT}
+
+void main() {
+    float red = samT(uR, vS);
+    float green = samT(uG, vS);
+    float blue = samT(uB, vS);
+
+    vec3 edge0 = vec3(0.20, 0.21, 0.22);
+    vec3 edge1 = vec3(0.23, 0.24, 0.25);
+    vec3 smoothColor = smoothstep(edge0, edge1, vec3(red, green, blue));
+
+    // Custom color mixing
+    vec3 customColor = 
+        smoothColor.r * uColorR + 
+        smoothColor.g * uColorG + 
+        smoothColor.b * uColorB;
+    
+    // Mix between original and custom colors
+    vec3 finalColor = mix(smoothColor, customColor, uColorMix);
+
+    // Apply inversion at the end
+    finalColor = mix(finalColor, 1.0 - finalColor, uInvert);
+
+    fragColor = vec4(finalColor, 1.0);
+}
     `,
     upVert: `#version 300 es
     in vec2 co;
@@ -474,105 +625,215 @@ const shaders = {
     }
     `,
     imageMapFrag: `#version 300 es
-    precision mediump float;
+precision mediump float;
 
-    uniform sampler2D uPI;
-    uniform sampler2D uImageMapTexture;
-    uniform vec2 uTex;
-    uniform vec4 uSampledChannel;
-    uniform float uDiffuseScaling;
-    uniform float uEdgeInfluence;
-    uniform float uBrightnessInfluence;
-    uniform vec2 uBrushPosition;
-    uniform float uBrushSize;
-    uniform float uBrushStrength;
-    uniform vec2 uResolution;
+uniform sampler2D uPI;
+uniform sampler2D uImageMapTexture;
+uniform vec2 uTex;
+uniform vec4 uSampledChannel;
+uniform float uDiffuseScaling;
+uniform float uEdgeInfluence;
+uniform float uBrightnessInfluence;
+uniform vec2 uBrushPosition;
+uniform float uBrushSize;
+uniform float uBrushStrength;
+uniform vec2 uResolution;
+uniform vec2 uDiffRates;
+uniform vec4 uFeedKillRates;
+uniform float uNoiseScale;
+uniform float uNoiseStrength;
+uniform float uTime;
+uniform float uAspectRatio;
 
-    in vec2 vS;
-    out vec4 fragColor;
-    ${shaderUtils.enDe16}
-    ${shaderUtils.samT}
 
-    float luminance(vec3 color) {
-        return dot(color, vec3(0.299, 0.587, 0.114));
-    }
 
-    vec2 kernel(vec2 decodedCenter) {
-        return
-            de(texture(uPI, vS + vec2(-1, -1) * uTex)) * 0.05 +
-            de(texture(uPI, vS + vec2(+0, -1) * uTex)) * 0.20 +
-            de(texture(uPI, vS + vec2(+1, -1) * uTex)) * 0.05 +
-    
-            de(texture(uPI, vS + vec2(-1, +0) * uTex)) * 0.20 -
-            decodedCenter +
-            de(texture(uPI, vS + vec2(+1, +0) * uTex)) * 0.20 +
-    
-            de(texture(uPI, vS + vec2(-1, +1) * uTex)) * 0.05 +
-            de(texture(uPI, vS + vec2(+0, +1) * uTex)) * 0.20 +
-            de(texture(uPI, vS + vec2(+1, +1) * uTex)) * 0.05;
-    }
+in vec2 vS;
+out vec4 fragColor;
 
-    float detectEdges(sampler2D tex, vec2 uv, vec2 step) {
-        float tl = luminance(texture(tex, uv + vec2(-step.x, -step.y)).rgb);
-        float t  = luminance(texture(tex, uv + vec2(0.0, -step.y)).rgb);
-        float tr = luminance(texture(tex, uv + vec2(step.x, -step.y)).rgb);
-        float r  = luminance(texture(tex, uv + vec2(step.x, 0.0)).rgb);
-        float br = luminance(texture(tex, uv + vec2(step.x, step.y)).rgb);
-        float b  = luminance(texture(tex, uv + vec2(0.0, step.y)).rgb);
-        float bl = luminance(texture(tex, uv + vec2(-step.x, step.y)).rgb);
-        float l  = luminance(texture(tex, uv + vec2(-step.x, 0.0)).rgb);
-        float dX = (tr + 2.0 * r + br) - (tl + 2.0 * l + bl);
-        float dY = (bl + 2.0 * b + br) - (tl + 2.0 * t + tr);
-        return length(vec2(dX, dY));
-    }
+// Encoding and decoding functions
+float de16(vec2 v) {
+    return dot(v, vec2(255.0 / 256.0, 1.0 / 256.0));
+}
 
-    void main() {
+vec2 en16(float f) {
+    f = 255.99 * clamp(f, 0.0, 1.0);
+    return vec2(floor(f) / 255.0, fract(f));
+}
+
+vec2 de(vec4 encoded) {
+    return vec2(de16(encoded.rg), de16(encoded.ba));
+}
+
+vec4 en(vec2 decoded) {
+    return vec4(en16(decoded.x), en16(decoded.y));
+}
+
+float samT(sampler2D tex, vec2 position) {
+    vec4 sTex = texture(tex, position);
+    return de(sTex).y;
+}
+
+// Luminance function
+float luminance(vec3 color) {
+    return dot(color, vec3(0.299, 0.587, 0.114));
+}
+
+// Edge detection function
+float detectEdges(sampler2D tex, vec2 uv, vec2 step) {
+    float tl = luminance(texture(tex, uv + vec2(-step.x, -step.y)).rgb);
+    float t  = luminance(texture(tex, uv + vec2(0.0, -step.y)).rgb);
+    float tr = luminance(texture(tex, uv + vec2(step.x, -step.y)).rgb);
+    float r  = luminance(texture(tex, uv + vec2(step.x, 0.0)).rgb);
+    float br = luminance(texture(tex, uv + vec2(step.x, step.y)).rgb);
+    float b  = luminance(texture(tex, uv + vec2(0.0, step.y)).rgb);
+    float bl = luminance(texture(tex, uv + vec2(-step.x, step.y)).rgb);
+    float l  = luminance(texture(tex, uv + vec2(-step.x, 0.0)).rgb);
+    float dX = (tr + 2.0 * r + br) - (tl + 2.0 * l + bl);
+    float dY = (bl + 2.0 * b + br) - (tl + 2.0 * t + tr);
+    return length(vec2(dX, dY));
+}
+
+// Kernel function for Laplacian
+vec2 kernel(vec2 decodedCenter) {
+    return
+        de(texture(uPI, vS + vec2(-1, -1) * uTex)) * 0.05 +
+        de(texture(uPI, vS + vec2(+0, -1) * uTex)) * 0.20 +
+        de(texture(uPI, vS + vec2(+1, -1) * uTex)) * 0.05 +
+        de(texture(uPI, vS + vec2(-1, +0) * uTex)) * 0.20 -
+        decodedCenter +
+        de(texture(uPI, vS + vec2(+1, +0) * uTex)) * 0.20 +
+        de(texture(uPI, vS + vec2(-1, +1) * uTex)) * 0.05 +
+        de(texture(uPI, vS + vec2(+0, +1) * uTex)) * 0.20 +
+        de(texture(uPI, vS + vec2(+1, +1) * uTex)) * 0.05;
+}
+
+// Simplex 3D Noise
+vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+vec4 permute(vec4 x) { return mod289(((x*34.0)+1.0)*x); }
+vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
+
+float snoise(vec3 v) {
+    const vec2 C = vec2(1.0/6.0, 1.0/3.0);
+    const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+
+    // First corner
+    vec3 i  = floor(v + dot(v, C.yyy));
+    vec3 x0 =   v - i + dot(i, C.xxx);
+
+    // Other corners
+    vec3 g = step(x0.yzx, x0.xyz);
+    vec3 l = 1.0 - g;
+    vec3 i1 = min(g.xyz, l.zxy);
+    vec3 i2 = max(g.xyz, l.zxy);
+
+    vec3 x1 = x0 - i1 + C.xxx;
+    vec3 x2 = x0 - i2 + C.yyy;
+    vec3 x3 = x0 - D.yyy;
+
+    // Permutations
+    i = mod289(i);
+    vec4 p = permute(permute(permute(
+             i.z + vec4(0.0, i1.z, i2.z, 1.0))
+           + i.y + vec4(0.0, i1.y, i2.y, 1.0))
+           + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+
+    // Gradients: 7x7 points over a square, mapped onto an octahedron.
+    // The ring size 17*17 = 289 is close to a multiple of 49 (49*6 = 294)
+    float n_ = 0.142857142857; // 1.0/7.0
+    vec3  ns = n_ * D.wyz - D.xzx;
+
+    vec4 j = p - 49.0 * floor(p * ns.z * ns.z);  //  mod(p,7*7)
+
+    vec4 x_ = floor(j * ns.z);
+    vec4 y_ = floor(j - 7.0 * x_);    // mod(j,N)
+
+    vec4 x = x_ *ns.x + ns.yyyy;
+    vec4 y = y_ *ns.x + ns.yyyy;
+    vec4 h = 1.0 - abs(x) - abs(y);
+
+    vec4 b0 = vec4(x.xy, y.xy);
+    vec4 b1 = vec4(x.zw, y.zw);
+
+    vec4 s0 = floor(b0)*2.0 + 1.0;
+    vec4 s1 = floor(b1)*2.0 + 1.0;
+    vec4 sh = -step(h, vec4(0.0));
+
+    vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy;
+    vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww;
+
+    vec3 p0 = vec3(a0.xy,h.x);
+    vec3 p1 = vec3(a0.zw,h.y);
+    vec3 p2 = vec3(a1.xy,h.z);
+    vec3 p3 = vec3(a1.zw,h.w);
+
+    // Normalise gradients
+    vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2, p2), dot(p3,p3)));
+    p0 *= norm.x;
+    p1 *= norm.y;
+    p2 *= norm.z;
+    p3 *= norm.w;
+
+    // Mix final noise value
+    vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
+    m = m * m;
+    return 42.0 * dot(m*m, vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)));
+}
+
+void main() {
     vec2 values = de(texture(uPI, vS));
     float A = values.x;
     float B = values.y;
 
     vec4 sampledColor = texture(uImageMapTexture, vS);
     float mapValue = dot(uSampledChannel, sampledColor);
-    
+
     float brightness = luminance(sampledColor.rgb);
     float edge = detectEdges(uImageMapTexture, vS, uTex);
-    
+
     mapValue = mix(mapValue, 1.0, brightness * uBrightnessInfluence);
     mapValue = mix(mapValue, 1.0, edge * uEdgeInfluence);
-    
+
     float aspectRatio = uResolution.x / uResolution.y;
 
     vec2 brushPos = uBrushPosition;
-    brushPos.x *= aspectRatio;
     vec2 pixelPos = vS;
+
+    brushPos.x *= aspectRatio;
     pixelPos.x *= aspectRatio;
     float distToBrush = distance(pixelPos, brushPos) / aspectRatio;
     float brushInfluence = smoothstep(uBrushSize, uBrushSize - 0.001, distToBrush);
-    
+
     A = mix(A, 1.0, brushInfluence * uBrushStrength);
     B = mix(B, 1.0, brushInfluence * uBrushStrength);
 
-    float feedA = mix(0.02220, 0.04470, mapValue);
-    float killB = mix(0.06516, 0.05789, mapValue);
-    
+    float diffA = uDiffRates.x;
+    float diffB = uDiffRates.y;
+    float feedA = mix(uFeedKillRates.x, uFeedKillRates.y, mapValue);
+    float killB = mix(uFeedKillRates.z, uFeedKillRates.w, mapValue);
+
     feedA = mix(feedA, feedA * (1.0 - brightness), uBrightnessInfluence);
     killB = mix(killB, killB * (1.0 + brightness), uBrightnessInfluence);
-    
+
     feedA = mix(feedA, feedA * (1.0 - edge), uEdgeInfluence);
     killB = mix(killB, killB * (1.0 + edge), uEdgeInfluence);
-    
-    float diffA = 0.210;
-    float diffB = 0.105;
+
+    // Calculate animated 3D Simplex noise
+    float noise = snoise(vec3(vS * uNoiseScale, uTime)) * uNoiseStrength;
+
+    // Add noise to the feed rate and kill rate
+    feedA = mix(feedA, feedA * (1.0 - noise), uNoiseStrength);
+    killB = mix(killB, killB * (1.0 + noise), uNoiseStrength);
 
     vec2 laplace = kernel(values);
     float reaction = A * B * B;
     const float dt = 1.0;
-    
+
     A = A + dt * (uDiffuseScaling * diffA * laplace.x - reaction + feedA * (1.0 - A));
     B = B + dt * (uDiffuseScaling * diffB * laplace.y + reaction - (killB + feedA) * B);
 
     fragColor = en(vec2(A, B));
-    }
+}
     `,
     updateMapFrag: `#version 300 es
     precision mediump float;
@@ -580,6 +841,10 @@ const shaders = {
     uniform sampler2D uPI;
     uniform vec2 uTex;
     uniform vec2 uRates;
+    uniform float FEED_MIN;
+    uniform float FEED_MAX;
+    uniform float KILL_MIN;
+    uniform float KILL_MAX;
     
     in vec2 vS;
     out vec4 fragColor;
@@ -617,8 +882,8 @@ const shaders = {
     }
     
     void main() {
-        float feedA = mix(#INJECT(FEED_MIN), #INJECT(FEED_MAX), vS.y);
-        float killB = mix(#INJECT(KILL_MIN), #INJECT(KILL_MAX), vS.x);
+        float feedA = mix(FEED_MIN, FEED_MAX, vS.y);
+        float killB = mix(KILL_MIN, KILL_MAX, vS.x);
     
         fragColor = computeNewValue(feedA, killB, uRates.x, uRates.y);
     }`,
@@ -725,6 +990,8 @@ class ShaderProgram extends GLResource {
                     gl.uniform1f(uniform.loc, uniform.value);
                 } else if (uniform.type === gl.FLOAT_VEC2) {
                     gl.uniform2fv(uniform.loc, uniform.value);
+                } else if (uniform.type === gl.FLOAT_VEC3) {
+                    gl.uniform3fv(uniform.loc, uniform.value);
                 } else if (uniform.type === gl.FLOAT_VEC4) {
                     gl.uniform4fv(uniform.loc, uniform.value);
                 } else if (uniform.type === gl.BOOL) {
@@ -899,6 +1166,8 @@ class ReactionDiffusion {
         this.initializeVAO();
         this.loadShaders();
         this.setupBrushListeners();
+        this.time = 0;  // Add this line to track time
+
     }
 
     initializeVAO() {
@@ -910,7 +1179,14 @@ class ReactionDiffusion {
 
     loadShaders() {
         this.asyncLoadShader("display-tricolor", shaders.disVert, shaders.disColFrag,
-            (shader) => { this.displayTricolorShader = shader; },
+            (shader) => { 
+                this.displayTricolorShader = shader; 
+                shader.u["uColorR"].value = config.colorR;
+                shader.u["uColorG"].value = config.colorG;
+                shader.u["uColorB"].value = config.colorB;
+                shader.u["uColorMix"].value = config.colorMix;
+                updateShaderUniforms();
+            },
             { uInvert: ReactionDiffusion.uInvert.toFixed(1) }
         );
         this.asyncLoadShader("update-map", shaders.upVert, shaders.updateMapFrag,
@@ -923,7 +1199,14 @@ class ReactionDiffusion {
             }
         );
         this.asyncLoadShader("update-image", shaders.upVert, shaders.imageMapFrag,
-            (shader) => { this.updateImageMapShader = shader; }
+            (shader) => { 
+                this.updateImageMapShader = shader; 
+                // Initialize new uniforms
+                shader.u["uNoiseScale"].value = config.noiseScale;
+                shader.u["uNoiseStrength"].value = config.noiseStrength;
+                shader.u["uTime"].value = 0;  // Initialize time
+
+            }
         );
         this.asyncLoadShader("reset", shaders.upVert, shaders.resFrag,
             (shader) => { this.resetShader = shader; },
@@ -1045,7 +1328,14 @@ class ReactionDiffusion {
             return;
         }
 
-        if (config.interface === "image" && this.updateImageMapShader) {
+        this.time += config.noiseSpeed;
+
+        if (this.updateImageMapShader) {
+            this.updateImageMapShader.u["uTime"].value = this.time;
+        }
+
+
+        if (config.interface === "image" && ReDiff.updateImageMapShader) {
             const inputImageTexture = getTexture();
             this.updateImageMapShader.use();
             this.updateImageMapShader.u["uImageMapTexture"].value = inputImageTexture.id;
@@ -1060,6 +1350,10 @@ class ReactionDiffusion {
             this.updateImageMapShader.u["uBrushSize"].value = config.brushSize;
             this.updateImageMapShader.u["uBrushStrength"].value = this.brush.isDrawing ? config.brushStrength : 0.0;
 
+            this.updateImageMapShader.u["uDiffRates"].value = [config.diffA, config.diffB];
+            this.updateImageMapShader.u["uFeedKillRates"].value = [config.feedAMin, config.feedAMax, config.killBMin, config.killBMax];
+            
+
             this.updateImageMapShader.bindAttributes();
 
             const splitNbIterations = Math.ceil(nbIterations / 3);
@@ -1069,6 +1363,9 @@ class ReactionDiffusion {
             this.updateInternal(this.updateImageMapShader, splitNbIterations, this.internalTextures[1]);
             this.updateImageMapShader.u["uSampledChannel"].value = [0, 0, 1, 0];
             this.updateInternal(this.updateImageMapShader, splitNbIterations, this.internalTextures[2]);
+
+            updateShaderUniforms();
+
         }
     }
 
@@ -1239,53 +1536,91 @@ class ImageTexture {
     }
 }
 
+
+function handleKeyPress(event) {
+    if (event.key.toLowerCase() === 'r') {
+        if (ReDiff) {
+            ReDiff.restart();
+        }
+    }
+}
+
+document.addEventListener('keydown', handleKeyPress);
+
+
+
 function initControls() {
     const gui = new dat.GUI({ autoPlace: false });
     const guiContainer = document.querySelector("#gui");
     guiContainer.appendChild(gui.domElement);
 
+    //gui.hide();
+
     guiContainer.style.position = 'absolute';
     guiContainer.style.top = '10px';
     guiContainer.style.right = '10px';
     guiContainer.style.zIndex = '1000';
-    
 
-    gui.add(config, 'zoom', 1, 5).onChange(value => {
+    const presetsFolder = gui.addFolder('Presets');
+    presetsFolder.add(config, 'preset', Object.keys(presets)).onChange(applyPreset);
+    presetsFolder.close();
+
+    const rdParamsFolder = gui.addFolder('Reaction-Diffusion Parameters');
+    rdParamsFolder.add(config, 'diffA', 0, 0.21).step(0.00001).onChange(updateShaderUniforms).listen();
+    rdParamsFolder.add(config, 'diffB', 0, 0.25).step(0.00001).onChange(updateShaderUniforms).listen();
+    rdParamsFolder.add(config, 'feedAMin', 0, 0.1).step(0.00001).onChange(updateShaderUniforms).listen();
+    rdParamsFolder.add(config, 'feedAMax', 0, 0.1).step(0.00001).onChange(updateShaderUniforms).listen();
+    rdParamsFolder.add(config, 'killBMin', 0, 0.1).step(0.00001).onChange(updateShaderUniforms).listen();
+    rdParamsFolder.add(config, 'killBMax', 0, 0.1).step(0.00001).onChange(updateShaderUniforms).listen();
+
+    const noiseFolder = gui.addFolder('Noise');
+    noiseFolder.add(config, 'noiseScale', 1, 50).step(0.1).onChange(updateShaderUniforms).listen();
+    noiseFolder.add(config, 'noiseStrength', 0, 0.5).step(0.001).onChange(updateShaderUniforms).listen();
+    noiseFolder.add(config, 'noiseSpeed', 0, 0.2).step(0.001).listen();
+    noiseFolder.close();
+
+    const paramsFolder = gui.addFolder('Parameters');
+    paramsFolder.add(config, 'zoom', 0, 5).onChange(value => {
         config.zoom = value;
     });
-
-    gui.add(config, 'speed', 1, 120).step(1).onChange(value => {
+    paramsFolder.add(config, 'speed', 1, 120).step(1).onChange(value => {
         config.speed = value;
     });
-
-    gui.add(config, 'contrast', 0, 150).step(1).onChange(value => {
+    paramsFolder.add(config, 'contrast', 0, 250).step(1).onChange(value => {
         config.contrast = value;
     });
-
-    gui.add(config, 'randomPatternScale', 1, 5.3).onChange(value => {
+    paramsFolder.add(config, 'randomPatternScale', 1.5, 5).step(0.01).onChange(value => {
         config.randomPatternScale = value;
     });
-
-    gui.add(config, 'edgeInfluence', -1, 1).step(0.01).onChange(value => {
+    paramsFolder.add(config, 'edgeInfluence', -1, 1).step(0.01).onChange(value => {
         config.edgeInfluence = value;
     });
-
-    gui.add(config, 'brightnessInfluence', -0.25, 0.25).step(0.001).onChange(value => {
+    paramsFolder.add(config, 'brightnessInfluence', -0.25, 0.25).step(0.001).onChange(value => {
         config.brightnessInfluence = value;
     });
-
-    gui.add(config, 'invert').onChange(value => {
+    paramsFolder.add(config, 'invert', 0, 1).step(1).name('Invert Colors').onChange(value => {
+        updateColors();
         config.invert = value ? 1 : 0;
         document.body.style.backgroundColor = config.invert === 1 ? 'white' : 'black';
     });
-
-    gui.add(config, 'brushSize', 0.001, 0.1).onChange(value => {
+    paramsFolder.add(config, 'brushSize', 0.001, 0.1).onChange(value => {
         config.brushSize = value;
     });
-
-    gui.add(config, 'brushStrength', 0, 1).onChange(value => {
+    paramsFolder.add(config, 'brushStrength', 0, 1).onChange(value => {
         config.brushStrength = value;
     });
+
+    paramsFolder.close();
+
+
+    const colorFolder = gui.addFolder('Custom Colors');
+    colorFolder.addColor(config, 'colorR').name('Red Channel Color').onChange(updateColors);
+    colorFolder.addColor(config, 'colorG').name('Green Channel Color').onChange(updateColors);
+    colorFolder.addColor(config, 'colorB').name('Blue Channel Color').onChange(updateColors);
+    colorFolder.add(config, 'colorMix', 0, 1).step(0.01).name('Custom Color Mix').onChange(updateColors);
+
+
+
 
     const cameraFolder = gui.addFolder('Camera');
     cameraFolder.add(config, 'zoomCam', 0.5, 3).step(0.1).onChange(value => {
@@ -1295,24 +1630,76 @@ function initControls() {
         }
     });
     
-    cameraFolder.open();
+    cameraFolder.close();
 
-    gui.add({ saveImage: function() { saveCanvasAsImage(); } }, 'saveImage').name('Save Image');
+    const saveFolder = gui.addFolder('Save');
+    saveFolder.add({ saveImage: function() { saveCanvasAsImage(); } }, 'saveImage').name('Save Image');
+    saveFolder.add({ splitAndSaveColors: function() { splitAndSaveColorChannels(); } }, 'splitAndSaveColors').name('Split & Save Colors');
+    saveFolder.add({ splitAndSaveSVG: function() { splitAndSaveColorChannelsAsSVG(); } }, 'splitAndSaveSVG').name('Split & Save as SVG');
 
-    gui.add({ splitAndSaveColors: function() { splitAndSaveColorChannels(); } }, 'splitAndSaveColors').name('Split & Save Colors');
-
-    gui.add({ splitAndSaveSVG: function() { splitAndSaveColorChannelsAsSVG(); } }, 'splitAndSaveSVG').name('Split & Save as SVG');
+    const audioFolder = gui.addFolder('Audio Reactivity');
+    audioFolder.add(config, 'audioReactive').name('Enable Audio Reactivity');
+    audioFolder.add(config, 'audioStrengthInfluence', 0, 1).step(0.01).name('Strength Influence');
+    audioFolder.add(config, 'audioSpeedInfluence', 0, 1).step(0.01).name('Speed Influence');
+    audioFolder.add(config, 'audioSensitivity', 0, 2).step(0.01).name('Audio Sensitivity');
+    audioFolder.add({ setupAudio: setupAudio }, 'setupAudio').name('Setup Audio');
 
 
     gui.add({ restartSimulation: function() { 
         if (ReDiff) ReDiff.restart(); 
     } }, 'restartSimulation').name('Restart')
 
-    
-    
+
+
+    updateShaderUniforms();
+
 
     return gui;
 }
+
+
+function applyPreset(presetName) {
+    const preset = presets[presetName];
+    if (preset) {
+        Object.assign(config, preset);
+        updateShaderUniforms();
+        // Update GUI controllers
+        for (let i in gui.__folders) {
+            const folder = gui.__folders[i];
+            for (let j in folder.__controllers) {
+                folder.__controllers[j].updateDisplay();
+            }
+        }
+    }
+}
+
+function updateShaderUniforms() {
+    if (ReDiff && ReDiff.updateImageMapShader) {
+        ReDiff.updateImageMapShader.u["uDiffRates"].value = [config.diffA, config.diffB];
+        ReDiff.updateImageMapShader.u["uFeedKillRates"].value = [config.feedAMin, config.feedAMax, config.killBMin, config.killBMax];
+        ReDiff.updateImageMapShader.u["uNoiseScale"].value = config.noiseScale;
+        ReDiff.updateImageMapShader.u["uNoiseStrength"].value = config.noiseStrength;
+    }
+
+    if (ReDiff && ReDiff.displayTricolorShader) {
+            ReDiff.displayTricolorShader.u["uColorR"].value = normalizeColor(config.colorR);
+            ReDiff.displayTricolorShader.u["uColorG"].value = normalizeColor(config.colorG);
+            ReDiff.displayTricolorShader.u["uColorB"].value = normalizeColor(config.colorB);
+            ReDiff.displayTricolorShader.u["uColorMix"].value = config.colorMix;
+            ReDiff.displayTricolorShader.u["uInvert"].value = config.invert;
+
+        }
+
+}
+
+
+function updateColors() {
+    updateShaderUniforms();
+    // Trigger a redraw if necessary
+    if (ReDiff) ReDiff.needToReset = true;
+}
+
+
 
 async function main() {
     const webglFlags = {
@@ -1360,28 +1747,63 @@ async function main() {
     // Now that ReDiff is initialized, we can set up the controls
     initControls();
 
+    await setupAudio();
+
+
     function mainLoop() {
         if (needToAdjustCanvasSize) {
             resizeCanvas();
             ReDiff.resize(canvas.width, canvas.height);
             needToAdjustCanvasSize = false;
         }
-
+    
         updateTexture();
-
+    
         // Check if a restart is needed
         if (ReDiff.needToReset) {
             ReDiff.clearInternalTextures();
             ReDiff.needToReset = false;
         }
-
-        ReDiff.updateImageMapShader.u["uDiffuseScaling"].value = config.randomPatternScale;
-        ReDiff.updateImageMapShader.u["uEdgeInfluence"].value = config.edgeInfluence;
-        ReDiff.updateImageMapShader.u["uBrightnessInfluence"].value = config.brightnessInfluence;
-
+    
+        if (ReDiff && ReDiff.displayTricolorShader) {
+            ReDiff.displayTricolorShader.u["uColorR"].value = normalizeColor(config.colorR);
+            ReDiff.displayTricolorShader.u["uColorG"].value = normalizeColor(config.colorG);
+            ReDiff.displayTricolorShader.u["uColorB"].value = normalizeColor(config.colorB);
+            ReDiff.displayTricolorShader.u["uColorMix"].value = config.colorMix;
+            ReDiff.displayTricolorShader.u["uInvert"].value = config.invert;
+        }
+    
+        // Update audio-reactive parameters
+        if (analyser && dataArray && config.audioReactive) {
+            analyser.getByteFrequencyData(dataArray);
+            const mappedNoiseStrength = mapNoiseStrength(dataArray) * config.audioSensitivity;
+            config.noiseStrength = config.noiseStrength * (1 - config.audioStrengthInfluence) + 
+                                   mappedNoiseStrength * config.audioStrengthInfluence;
+            config.noiseSpeed = config.noiseSpeed * (1 - config.audioSpeedInfluence) + 
+                                mapNoiseSpeed(dataArray) * config.audioSpeedInfluence;
+        }
+    
+        if (ReDiff && ReDiff.updateImageMapShader && ReDiff.updateImageMapShader.u) {
+            if (ReDiff.updateImageMapShader.u["uDiffuseScaling"]) {
+                ReDiff.updateImageMapShader.u["uDiffuseScaling"].value = config.randomPatternScale;
+            }
+            if (ReDiff.updateImageMapShader.u["uEdgeInfluence"]) {
+                ReDiff.updateImageMapShader.u["uEdgeInfluence"].value = config.edgeInfluence;
+            }
+            if (ReDiff.updateImageMapShader.u["uBrightnessInfluence"]) {
+                ReDiff.updateImageMapShader.u["uBrightnessInfluence"].value = config.brightnessInfluence;
+            }
+            if (ReDiff.updateImageMapShader.u["uNoiseStrength"]) {
+                ReDiff.updateImageMapShader.u["uNoiseStrength"].value = config.noiseStrength;
+            }
+            if (ReDiff.updateImageMapShader.u["uNoiseSpeed"]) {
+                ReDiff.updateImageMapShader.u["uNoiseSpeed"].value = config.noiseSpeed;
+            }
+        }
+    
         ReDiff.update();
         ReDiff.drawToCanvas();
-
+    
         requestAnimationFrame(mainLoop);
     }
 
