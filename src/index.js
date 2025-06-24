@@ -15,10 +15,11 @@ const config = {
     interface: "image",
     initState: "starter",
     maxResolution: 8,
-    invert: 1,
+    invert: 0,
     speed: 60,
     patternSplit: 7,
     contrast: 75,
+    chunkiness: 1,
 
     edgeInfluence: -0.09,
     brightnessInfluence: 0.0,
@@ -33,6 +34,16 @@ const config = {
     killBMin: 0.06516,
     killBMax: 0.05789,
     preset: 'OG',
+    
+    // Per-channel algorithm settings
+    algorithmC: 'OG',           // Cyan channel algorithm
+    algorithmM: 'OG',           // Magenta channel algorithm
+    algorithmY: 'OG',           // Yellow channel algorithm
+    algorithmK: 'OG',       // Key (Black) channel algorithm
+    enablePerChannelAlgorithms: true, // Toggle for per-channel vs global
+    patternSharpness: 40.0,      // Sharpness for the final pattern sharpening
+    patternThreshold: 0.23,       // Threshold for the final pattern sharpening
+    
     noiseScale: 1.0,
     noiseStrength: 0,
     noiseSpeed: 0,
@@ -121,6 +132,11 @@ const presets = {
         diffA: 0.19, diffB: 0.09,
         feedAMin: 0.037, feedAMax: 0.06,
         killBMin: 0.059, killBMax: 0.065
+    },
+    'Chunky': {
+        diffA: 0.4, diffB: 0.2,
+        feedAMin: 0.04, feedAMax: 0.07,
+        killBMin: 0.05, killBMax: 0.065
     }
 };
 
@@ -167,6 +183,43 @@ function normalizeColor(color) {
     return color.map(c => c / 255);
 }
 
+// Helper functions for per-channel algorithm parameters
+function getChannelParams(channel) {
+    if (!config.enablePerChannelAlgorithms) {
+        // Use global parameters
+        return {
+            diffA: config.diffA,
+            diffB: config.diffB,
+            feedAMin: config.feedAMin,
+            feedAMax: config.feedAMax,
+            killBMin: config.killBMin,
+            killBMax: config.killBMax
+        };
+    }
+    
+    // Use per-channel algorithm presets
+    let algorithmName;
+    switch(channel) {
+        case 'C': algorithmName = config.algorithmC; break;
+        case 'M': algorithmName = config.algorithmM; break;
+        case 'Y': algorithmName = config.algorithmY; break;
+        case 'K': algorithmName = config.algorithmK; break;
+        default: algorithmName = config.preset;
+    }
+    
+    return presets[algorithmName] || presets[config.preset];
+}
+
+function getChannelDiffRates(channel) {
+    const params = getChannelParams(channel);
+    return [params.diffA, params.diffB];
+}
+
+function getChannelFeedKillRates(channel) {
+    const params = getChannelParams(channel);
+    return [params.feedAMin, params.feedAMax, params.killBMin, params.killBMax];
+}
+
 function saveCanvasAsImage() {
     // Create a temporary canvas to draw the WebGL content
     const tempCanvas = document.createElement('canvas');
@@ -189,49 +242,51 @@ function saveCanvasAsImage() {
     document.body.removeChild(link);
 }
 
-function splitAndSaveColorChannels() {
-    // Create a temporary canvas to draw the WebGL content
+function splitAndSaveCMYKChannels() {
+    if (!ReDiff || !ReDiff.displaySingleChannelShader) {
+        console.error("Single channel display shader not ready.");
+        return;
+    }
+
+    // Create a temporary canvas to draw the WebGL content to
     const tempCanvas = document.createElement('canvas');
     tempCanvas.width = canvas.width;
     tempCanvas.height = canvas.height;
     const tempCtx = tempCanvas.getContext('2d');
 
-    // Draw the WebGL canvas content to the temporary canvas
-    tempCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height);
+    const channelNames = ['cyan', 'magenta', 'yellow', 'black'];
+    const shader = ReDiff.displaySingleChannelShader;
 
-    // Get the image data
-    const imageData = tempCtx.getImageData(0, 0, canvas.width, canvas.height);
-    const data = imageData.data;
-
-    // Create separate canvases for each color channel
-    const channels = ['cyan', 'magenta', 'yellow'];
-    channels.forEach((channel, index) => {
-        const channelCanvas = document.createElement('canvas');
-        channelCanvas.width = canvas.width;
-        channelCanvas.height = canvas.height;
-        const channelCtx = channelCanvas.getContext('2d');
+    gl.bindVertexArray(ReDiff.vao);
+    shader.use();
+    
+    const canvasAspectRatio = ReDiff.targetWidth / ReDiff.targetHeight;
+    const internalTextureAspectRatio = ReDiff.internalTextures[0].width / ReDiff.internalTextures[0].height;
+    shader.u["s"].value = [internalTextureAspectRatio / canvasAspectRatio, 1];
+    shader.u["z"].value = config.zoom;
+    
+    channelNames.forEach((channelName, index) => {
+        shader.u["uChannelTexture"].value = ReDiff.internalTextures[index].current;
         
-        const channelImageData = channelCtx.createImageData(canvas.width, canvas.height);
-        const channelData = channelImageData.data;
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.viewport(0, 0, ReDiff.targetWidth, ReDiff.targetHeight);
+        shader.bindUniformsAndAttributes();
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
-        for (let i = 0; i < data.length; i += 4) {
-            channelData[i] = data[i + index];     // R
-            channelData[i + 1] = data[i + index]; // G
-            channelData[i + 2] = data[i + index]; // B
-            channelData[i + 3] = 255;             // A
-        }
+        tempCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height);
 
-        channelCtx.putImageData(channelImageData, 0, 0);
-
-        // Save the channel image
-        const dataURL = channelCanvas.toDataURL('image/png');
+        const dataURL = tempCanvas.toDataURL('image/png');
         const link = document.createElement('a');
         link.href = dataURL;
-        link.download = `reaction_diffusion_${channel}_${Date.now()}.png`;
+        link.download = `reaction_diffusion_${channelName}_${Date.now()}.png`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
     });
+    
+    gl.bindVertexArray(null);
+
+    ReDiff.drawToCanvas();
 }
 
 function simplifiedImageTrace(imageData, channel, threshold = 128, sampleInterval = 5) {
@@ -533,37 +588,42 @@ const shaders = {
         vS = 0.5 + 0.5 * co;
     }
     `,
-    disColFrag: `#version 300 es
+    displayCMYKFrag: `#version 300 es
 precision mediump float;
-uniform sampler2D uR, uG, uB;
-uniform vec3 uColorR, uColorG, uColorB;
-uniform float uColorMix;
-uniform float uInvert;  // Changed to float for easier use in calculations
-in vec2 vS;  
+uniform sampler2D uC, uM, uY, uK;
+uniform float uPatternSharpness;
+uniform float uPatternThreshold;
+uniform float uInvert;
+in vec2 vS;
 out vec4 fragColor;
 
 ${shaderUtils.enDe16}
 ${shaderUtils.samT}
 
 void main() {
-    float red = samT(uR, vS);
-    float green = samT(uG, vS);
-    float blue = samT(uB, vS);
+    float c = samT(uC, vS);
+    float m = samT(uM, vS);
+    float y = samT(uY, vS);
+    float k = samT(uK, vS);
 
-    vec3 edge0 = vec3(0.20, 0.21, 0.22);
-    vec3 edge1 = vec3(0.23, 0.24, 0.25);
-    vec3 smoothColor = smoothstep(edge0, edge1, vec3(red, green, blue));
+    // Apply high contrast sharpening
+    float halfWidth = 1.0 / (2.0 * uPatternSharpness);
+    float edge0 = uPatternThreshold - halfWidth;
+    float edge1 = uPatternThreshold + halfWidth;
 
-    // Custom color mixing
-    vec3 customColor = 
-        smoothColor.r * uColorR + 
-        smoothColor.g * uColorG + 
-        smoothColor.b * uColorB;
-    
-    // Mix between original and custom colors
-    vec3 finalColor = mix(smoothColor, customColor, uColorMix);
+    c = smoothstep(edge0, edge1, c);
+    m = smoothstep(edge0, edge1, m);
+    y = smoothstep(edge0, edge1, y);
+    k = smoothstep(edge0, edge1, k);
 
-    // Apply inversion at the end
+    // CMYK to RGB conversion
+    float r = (1.0 - c) * (1.0 - k);
+    float g = (1.0 - m) * (1.0 - k);
+    float b = (1.0 - y) * (1.0 - k);
+
+    vec3 finalColor = vec3(r, g, b);
+
+    // Final inversion toggle
     finalColor = mix(finalColor, 1.0 - finalColor, uInvert);
 
     fragColor = vec4(finalColor, 1.0);
@@ -630,7 +690,7 @@ precision mediump float;
 uniform sampler2D uPI;
 uniform sampler2D uImageMapTexture;
 uniform vec2 uTex;
-uniform vec4 uSampledChannel;
+uniform int uTargetChannel; // 0:C, 1:M, 2:Y, 3:K
 uniform float uDiffuseScaling;
 uniform float uEdgeInfluence;
 uniform float uBrightnessInfluence;
@@ -785,10 +845,27 @@ void main() {
     float A = values.x;
     float B = values.y;
 
-    vec4 sampledColor = texture(uImageMapTexture, vS);
-    float mapValue = dot(uSampledChannel, sampledColor);
+    vec4 sampledRGB = texture(uImageMapTexture, vS);
+    float r = sampledRGB.r;
+    float g = sampledRGB.g;
+    float b = sampledRGB.b;
 
-    float brightness = luminance(sampledColor.rgb);
+    // RGB to CMYK conversion
+    float k_val = 1.0 - max(r, max(g, b));
+    float c_val = 0.0, m_val = 0.0, y_val = 0.0;
+    if (k_val < 1.0) {
+        c_val = (1.0 - r - k_val) / (1.0 - k_val);
+        m_val = (1.0 - g - k_val) / (1.0 - k_val);
+        y_val = (1.0 - b - k_val) / (1.0 - k_val);
+    }
+    
+    float mapValue = 0.0;
+    if (uTargetChannel == 0) mapValue = c_val;
+    else if (uTargetChannel == 1) mapValue = m_val;
+    else if (uTargetChannel == 2) mapValue = y_val;
+    else if (uTargetChannel == 3) mapValue = k_val;
+
+    float brightness = luminance(sampledRGB.rgb);
     float edge = detectEdges(uImageMapTexture, vS, uTex);
 
     mapValue = mix(mapValue, 1.0, brightness * uBrightnessInfluence);
@@ -887,6 +964,20 @@ void main() {
     
         fragColor = computeNewValue(feedA, killB, uRates.x, uRates.y);
     }`,
+    displaySingleChannelFrag: `#version 300 es
+precision mediump float;
+uniform sampler2D uChannelTexture;
+in vec2 vS;
+out vec4 fragColor;
+
+${shaderUtils.enDe16}
+${shaderUtils.samT}
+
+void main() {
+    float value = samT(uChannelTexture, vS);
+    fragColor = vec4(vec3(value), 1.0);
+}
+    `,
 };
 
 let gl = null;
@@ -994,7 +1085,7 @@ class ShaderProgram extends GLResource {
                     gl.uniform3fv(uniform.loc, uniform.value);
                 } else if (uniform.type === gl.FLOAT_VEC4) {
                     gl.uniform4fv(uniform.loc, uniform.value);
-                } else if (uniform.type === gl.BOOL) {
+                } else if (uniform.type === gl.BOOL || uniform.type === gl.INT) {
                     gl.uniform1i(uniform.loc, uniform.value);
                 }
             }
@@ -1150,6 +1241,7 @@ class ReactionDiffusion {
             new RenderToTextureSwapable(),
             new RenderToTextureSwapable(),
             new RenderToTextureSwapable(),
+            new RenderToTextureSwapable(), // For K channel
         ];
 
         this.needToReset = true;
@@ -1167,7 +1259,21 @@ class ReactionDiffusion {
         this.loadShaders();
         this.setupBrushListeners();
         this.time = 0;  // Add this line to track time
+        this.updateTextureFiltering();
 
+    }
+
+    updateTextureFiltering() {
+        const filter = config.chunkiness > 1 ? gl.NEAREST : gl.LINEAR;
+        for (const swapable of this.internalTextures) {
+            for (const tex of [swapable.previousTexture, swapable.currentTexture]) {
+                if (tex.texture) {
+                    gl.bindTexture(gl.TEXTURE_2D, tex.texture);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+                    gl.bindTexture(gl.TEXTURE_2D, null);
+                }
+            }
+        }
     }
 
     initializeVAO() {
@@ -1178,13 +1284,11 @@ class ReactionDiffusion {
     }
 
     loadShaders() {
-        this.asyncLoadShader("display-tricolor", shaders.disVert, shaders.disColFrag,
+        this.asyncLoadShader("display-cmyk", shaders.disVert, shaders.displayCMYKFrag,
             (shader) => { 
-                this.displayTricolorShader = shader; 
-                shader.u["uColorR"].value = config.colorR;
-                shader.u["uColorG"].value = config.colorG;
-                shader.u["uColorB"].value = config.colorB;
-                shader.u["uColorMix"].value = config.colorMix;
+                this.displayCMYKShader = shader; 
+                shader.u["uPatternSharpness"].value = config.patternSharpness;
+                shader.u["uPatternThreshold"].value = config.patternThreshold;
                 updateShaderUniforms();
             },
             { uInvert: ReactionDiffusion.uInvert.toFixed(1) }
@@ -1211,6 +1315,11 @@ class ReactionDiffusion {
         this.asyncLoadShader("reset", shaders.upVert, shaders.resFrag,
             (shader) => { this.resetShader = shader; },
             { PATTERN_SPLIT: `int(${config.patternSplit})` }
+        );
+        this.asyncLoadShader("display-single-channel", shaders.disVert, shaders.displaySingleChannelFrag,
+            (shader) => {
+                this.displaySingleChannelShader = shader;
+            }
         );
     }
 
@@ -1288,14 +1397,15 @@ class ReactionDiffusion {
     drawToCanvas() {
         gl.bindVertexArray(this.vao);
         gl.viewport(0, 0, this.targetWidth, this.targetHeight);
-        let shader = this.displayTricolorShader;
+        let shader = this.displayCMYKShader;
 
         if (shader) {
             shader.use();
 
-            shader.u["uR"].value = this.internalTextures[0].current;
-            shader.u["uG"].value = this.internalTextures[1].current;
-            shader.u["uB"].value = this.internalTextures[2].current;
+            shader.u["uC"].value = this.internalTextures[0].current;
+            shader.u["uM"].value = this.internalTextures[1].current;
+            shader.u["uY"].value = this.internalTextures[2].current;
+            shader.u["uK"].value = this.internalTextures[3].current;
 
             const canvasAspectRatio = this.targetWidth / this.targetHeight;
             const internalTextureAspectRatio = this.internalTextures[0].width / this.internalTextures[0].height;
@@ -1356,13 +1466,31 @@ class ReactionDiffusion {
 
             this.updateImageMapShader.bindAttributes();
 
-            const splitNbIterations = Math.ceil(nbIterations / 3);
-            this.updateImageMapShader.u["uSampledChannel"].value = [1, 0, 0, 0];
+            const splitNbIterations = Math.ceil(nbIterations / 4);
+            
+            // Process Cyan Channel
+            this.updateImageMapShader.u["uTargetChannel"].value = 0;
+            this.updateImageMapShader.u["uDiffRates"].value = getChannelDiffRates('C');
+            this.updateImageMapShader.u["uFeedKillRates"].value = getChannelFeedKillRates('C');
             this.updateInternal(this.updateImageMapShader, splitNbIterations, this.internalTextures[0]);
-            this.updateImageMapShader.u["uSampledChannel"].value = [0, 1, 0, 0];
+            
+            // Process Magenta Channel
+            this.updateImageMapShader.u["uTargetChannel"].value = 1;
+            this.updateImageMapShader.u["uDiffRates"].value = getChannelDiffRates('M');
+            this.updateImageMapShader.u["uFeedKillRates"].value = getChannelFeedKillRates('M');
             this.updateInternal(this.updateImageMapShader, splitNbIterations, this.internalTextures[1]);
-            this.updateImageMapShader.u["uSampledChannel"].value = [0, 0, 1, 0];
+            
+            // Process Yellow Channel
+            this.updateImageMapShader.u["uTargetChannel"].value = 2;
+            this.updateImageMapShader.u["uDiffRates"].value = getChannelDiffRates('Y');
+            this.updateImageMapShader.u["uFeedKillRates"].value = getChannelFeedKillRates('Y');
             this.updateInternal(this.updateImageMapShader, splitNbIterations, this.internalTextures[2]);
+
+            // Process Key (Black) Channel
+            this.updateImageMapShader.u["uTargetChannel"].value = 3;
+            this.updateImageMapShader.u["uDiffRates"].value = getChannelDiffRates('K');
+            this.updateImageMapShader.u["uFeedKillRates"].value = getChannelFeedKillRates('K');
+            this.updateInternal(this.updateImageMapShader, splitNbIterations, this.internalTextures[3]);
 
             updateShaderUniforms();
 
@@ -1411,10 +1539,15 @@ class ReactionDiffusion {
                 neededHeight = Math.ceil(canvasAspectRatio / imageAspectRatio * this.targetHeight);
             }
         }
+
+        neededWidth = Math.ceil(neededWidth / config.chunkiness);
+        neededHeight = Math.ceil(neededHeight / config.chunkiness);
+
         if (this.internalTextures[0].width !== neededWidth || this.internalTextures[0].height !== neededHeight) {
             for (const texture of this.internalTextures) {
                 texture.reserveSpace(neededWidth, neededHeight);
             }
+            this.updateTextureFiltering();
             return true;
         }
         return false;
@@ -1565,6 +1698,35 @@ function initControls() {
     presetsFolder.add(config, 'preset', Object.keys(presets)).onChange(applyPreset);
     presetsFolder.close();
 
+    // Add Per-Channel Algorithm Controls
+    const perChannelFolder = gui.addFolder('Per-Channel Algorithms');
+    perChannelFolder.add(config, 'enablePerChannelAlgorithms').name('Enable Per-Channel').onChange((value) => {
+        config.enablePerChannelAlgorithms = value;
+        updateShaderUniforms();
+        if (ReDiff) ReDiff.restart();
+    });
+    perChannelFolder.add(config, 'algorithmC', Object.keys(presets)).name('Cyan Algorithm').onChange((value) => {
+        config.algorithmC = value;
+        updateShaderUniforms();
+        if (ReDiff) ReDiff.restart();
+    });
+    perChannelFolder.add(config, 'algorithmM', Object.keys(presets)).name('Magenta Algorithm').onChange((value) => {
+        config.algorithmM = value;
+        updateShaderUniforms();
+        if (ReDiff) ReDiff.restart();
+    });
+    perChannelFolder.add(config, 'algorithmY', Object.keys(presets)).name('Yellow Algorithm').onChange((value) => {
+        config.algorithmY = value;
+        updateShaderUniforms();
+        if (ReDiff) ReDiff.restart();
+    });
+    perChannelFolder.add(config, 'algorithmK', Object.keys(presets)).name('Key (Black) Algorithm').onChange((value) => {
+        config.algorithmK = value;
+        updateShaderUniforms();
+        if (ReDiff) ReDiff.restart();
+    });
+    perChannelFolder.close();
+
     const rdParamsFolder = gui.addFolder('Reaction-Diffusion Parameters');
     rdParamsFolder.add(config, 'diffA', 0, 0.21).step(0.00001).onChange(updateShaderUniforms).listen();
     rdParamsFolder.add(config, 'diffB', 0, 0.25).step(0.00001).onChange(updateShaderUniforms).listen();
@@ -1580,12 +1742,19 @@ function initControls() {
     noiseFolder.close();
 
     const paramsFolder = gui.addFolder('Parameters');
+    paramsFolder.add(config, 'chunkiness', 1, 16, 1).name('Chunkiness').onChange(value => {
+        config.chunkiness = value;
+        ReDiff.updateTextureFiltering();
+        ReDiff.restart();
+    });
     paramsFolder.add(config, 'zoom', 0, 5).onChange(value => {
         config.zoom = value;
     });
     paramsFolder.add(config, 'speed', 1, 120).step(1).onChange(value => {
         config.speed = value;
     });
+    paramsFolder.add(config, 'patternSharpness', 1, 100).step(0.1).name('Pattern Sharpness').onChange(updateShaderUniforms);
+    paramsFolder.add(config, 'patternThreshold', 0, 1).step(0.01).name('Pattern Threshold').onChange(updateShaderUniforms);
     paramsFolder.add(config, 'contrast', 0, 250).step(1).onChange(value => {
         config.contrast = value;
     });
@@ -1634,8 +1803,7 @@ function initControls() {
 
     const saveFolder = gui.addFolder('Save');
     saveFolder.add({ saveImage: function() { saveCanvasAsImage(); } }, 'saveImage').name('Save Image');
-    saveFolder.add({ splitAndSaveColors: function() { splitAndSaveColorChannels(); } }, 'splitAndSaveColors').name('Split & Save Colors');
-    saveFolder.add({ splitAndSaveSVG: function() { splitAndSaveColorChannelsAsSVG(); } }, 'splitAndSaveSVG').name('Split & Save as SVG');
+    saveFolder.add({ splitAndSaveCMYK: function() { splitAndSaveCMYKChannels(); } }, 'splitAndSaveCMYK').name('Split & Save CMYK');
 
     const audioFolder = gui.addFolder('Audio Reactivity');
     audioFolder.add(config, 'audioReactive').name('Enable Audio Reactivity');
@@ -1681,13 +1849,10 @@ function updateShaderUniforms() {
         ReDiff.updateImageMapShader.u["uNoiseStrength"].value = config.noiseStrength;
     }
 
-    if (ReDiff && ReDiff.displayTricolorShader) {
-            ReDiff.displayTricolorShader.u["uColorR"].value = normalizeColor(config.colorR);
-            ReDiff.displayTricolorShader.u["uColorG"].value = normalizeColor(config.colorG);
-            ReDiff.displayTricolorShader.u["uColorB"].value = normalizeColor(config.colorB);
-            ReDiff.displayTricolorShader.u["uColorMix"].value = config.colorMix;
-            ReDiff.displayTricolorShader.u["uInvert"].value = config.invert;
-
+    if (ReDiff && ReDiff.displayCMYKShader) {
+            ReDiff.displayCMYKShader.u["uPatternSharpness"].value = config.patternSharpness;
+            ReDiff.displayCMYKShader.u["uPatternThreshold"].value = config.patternThreshold;
+            ReDiff.displayCMYKShader.u["uInvert"].value = config.invert;
         }
 
 }
@@ -1765,12 +1930,10 @@ async function main() {
             ReDiff.needToReset = false;
         }
     
-        if (ReDiff && ReDiff.displayTricolorShader) {
-            ReDiff.displayTricolorShader.u["uColorR"].value = normalizeColor(config.colorR);
-            ReDiff.displayTricolorShader.u["uColorG"].value = normalizeColor(config.colorG);
-            ReDiff.displayTricolorShader.u["uColorB"].value = normalizeColor(config.colorB);
-            ReDiff.displayTricolorShader.u["uColorMix"].value = config.colorMix;
-            ReDiff.displayTricolorShader.u["uInvert"].value = config.invert;
+        if (ReDiff && ReDiff.displayCMYKShader) {
+            ReDiff.displayCMYKShader.u["uPatternSharpness"].value = config.patternSharpness;
+            ReDiff.displayCMYKShader.u["uPatternThreshold"].value = config.patternThreshold;
+            ReDiff.displayCMYKShader.u["uInvert"].value = config.invert;
         }
     
         // Update audio-reactive parameters

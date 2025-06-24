@@ -78,10 +78,11 @@ uniform vec2 uBrushPosition;
 uniform float uBrushSize;
 uniform float uBrushStrength;
 uniform vec2 uResolution;
-uniform float uFeedRate;
-uniform float uKillRate;
-uniform float uDiffusionRateA;
-uniform float uDiffusionRateB;
+
+// Per-channel parameters
+uniform vec2 uDiffRates;        // [diffA, diffB] for current channel
+uniform vec4 uFeedKillRates;    // [feedAMin, feedAMax, killBMin, killBMax] for current channel
+
 uniform float uTimeStep;
 
 in vec2 vS;
@@ -146,8 +147,8 @@ void main() {
     A = mix(A, 1.0, brushInfluence * uBrushStrength);
     B = mix(B, 1.0, brushInfluence * uBrushStrength);
 
-    float feedA = mix(0.02220, 0.04470, mapValue);
-    float killB = mix(0.06516, 0.05789, mapValue);
+    float feedA = mix(uFeedKillRates.x, uFeedKillRates.y, mapValue);
+    float killB = mix(uFeedKillRates.z, uFeedKillRates.w, mapValue);
     
     feedA = mix(feedA, feedA * (1.0 - brightness), uBrightnessInfluence);
     killB = mix(killB, killB * (1.0 + brightness), uBrightnessInfluence);
@@ -159,8 +160,8 @@ void main() {
     float reaction = A * B * B;
     float dt = uTimeStep;
     
-    A = A + dt * (uDiffusionRateA * uDiffuseScaling * laplace.x - reaction + uFeedRate * (1.0 - A));
-    B = B + dt * (uDiffusionRateB * uDiffuseScaling * laplace.y + reaction - (uKillRate + uFeedRate) * B);
+    A = A + dt * (uDiffRates.x * uDiffuseScaling * laplace.x - reaction + feedA * (1.0 - A));
+    B = B + dt * (uDiffRates.y * uDiffuseScaling * laplace.y + reaction - (killB + feedA) * B);
 
     fragColor = en(vec2(A, B));
 }
