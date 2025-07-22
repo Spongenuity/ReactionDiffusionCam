@@ -88,11 +88,3 @@ MIT License. Feel free to fork, remix, or build upon this project for creative o
 
 ---
 
-## TODO
-
-- [ ] Add user interface for channel-specific tuning  
-- [ ] Publish NPM/WebComponent version  
-- [ ] Enable recording video exports  
-- [ ] Add audio-reactive presets with music
-
-
