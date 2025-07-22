@@ -4,7 +4,7 @@ A real-time generative art tool that transforms your webcam feed into layered CM
 
 Inspired by printmaking, cellular automata, and visual computing, this system creates organic, evolving textures in the CMYK colour model, using your live camera stream as input.
 
-![Example 1](./reaction_diffusion_1725186654040.png)
+![Example 1](./reaction_diffusion_1725091165977.png)
 ![Example 2](./reaction_diffusion_1725187536731.png)
 ![Example 3](./reaction_diffusion_1725034782881.png)
 
@@ -72,7 +72,7 @@ No build step or external dependencies are required.
 
 | Live Feed → CMYK Reaction-Diffusion Output |
 |-------------------------------------------|
-| ![Portrait Sample 1](./reaction_diffusion_1725186654040.png) |
+| ![Portrait Sample 1](./reaction_diffusion_1725091165977.png) |
 | ![Portrait Sample 2](./reaction_diffusion_1725187536731.png) |
 | ![Portrait Sample 3](./reaction_diffusion_1725034782881.png) |
 
